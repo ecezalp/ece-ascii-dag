@@ -1,35 +1,41 @@
 package screen
 
-func GetBoxRuneMap() map[string]rune {
-	var boxRuneMap map[string]rune
-	boxRuneMap["topRightCorner"] = '┐'
-	boxRuneMap["bottomRightCorner"] = '┘'
-	boxRuneMap["topLeftCorner"] = '┌'
-	boxRuneMap["bottomLeftCorner"] = '└'
-	boxRuneMap["horizontalLine"] = '─'
-	boxRuneMap["verticalLine"] = '│'
-	return boxRuneMap
-}
+import . "ece-ascii-dag/util"
 
 type Screen struct {
-	width  int
-	height int
-	runes  [][]rune
+	width    int
+	height   int
+	runes    [][]rune
+	boxStyle map[string]rune
 }
 
-func (s *Screen) PlaceChar(x, y int, rune rune) {
+func (s *Screen) ReadRune(x, y int) rune {
+	return s.runes[y][x]
+}
+
+func (s *Screen) PlaceRune(x, y int, rune rune) {
 	s.runes[y][x] = rune
 }
 
 func (s *Screen) PlaceWord(x, y int, word []rune) {
 	for i, rune := range word {
-		s.PlaceChar(x+i, y, rune)
+		s.PlaceRune(x+i, y, rune)
+	}
+}
+
+func (s *Screen) PlaceHorizontalLine(left, right, y int, rune rune) {
+	for x := left; x <= right; x++ {
+		s.PlaceRune(x, y, rune)
+	}
+}
+
+func (s *Screen) PlaceVerticalLine(top, bottom, x int, rune rune) {
+	for y := top; y <= bottom; y++ {
+		s.PlaceRune(x, y, rune)
 	}
 }
 
 func (s *Screen) PlaceBox(x, y, width, height int) {
-	boxRuneMap := GetBoxRuneMap()
-
 	// determine box coordinates
 	boxStartY := y
 	boxEndY := y + height - 1
@@ -37,25 +43,29 @@ func (s *Screen) PlaceBox(x, y, width, height int) {
 	boxEndX := x + width - 1
 
 	// place corners
-	s.PlaceChar(boxStartX, boxStartY, boxRuneMap["topLeftCorner"])
-	s.PlaceChar(boxEndX, boxStartY, boxRuneMap["topLeftCorner"])
-	s.PlaceChar(boxStartX, boxEndY, boxRuneMap["bottomLeftCorner"])
-	s.PlaceChar(boxEndX, boxEndY, boxRuneMap["bottomRightCorner"])
+	s.PlaceRune(boxStartX, boxStartY, s.boxStyle["topLeftCorner"])
+	s.PlaceRune(boxEndX, boxStartY, s.boxStyle["topLeftCorner"])
+	s.PlaceRune(boxStartX, boxEndY, s.boxStyle["bottomLeftCorner"])
+	s.PlaceRune(boxEndX, boxEndY, s.boxStyle["bottomRightCorner"])
 
 	// place lines
-	for xLine := 1; xLine < width-1; xLine++ {
-		s.PlaceChar(boxStartX+xLine, boxStartY, boxRuneMap["horizontalLine"])
-		s.PlaceChar(boxStartX+xLine, boxEndY, boxRuneMap["horizontalLine"])
-	}
-	for yLine := 1; yLine < height-1; yLine++ {
-		s.PlaceChar(boxStartX, boxStartY+yLine, boxRuneMap["verticalLine"])
-		s.PlaceChar(boxEndX, boxStartY+yLine, boxRuneMap["verticalLine"])
-	}
+	s.PlaceHorizontalLine(boxStartX, boxEndX, boxStartY, s.boxStyle["horizontalLine"])
+	s.PlaceHorizontalLine(boxStartX, boxEndX, boxEndY, s.boxStyle["horizontalLine"])
+	s.PlaceVerticalLine(boxStartY, boxEndY, boxStartX, s.boxStyle["verticalLine"])
+	s.PlaceVerticalLine(boxStartY, boxEndY, boxEndY, s.boxStyle["verticalLine"])
 }
 
 func (s *Screen) PlaceTextBox(x, y int, word []rune) {
-	s.PlaceWord(x+1, y+1, word)
 	s.PlaceBox(x, y, len(word)+2, 3)
+	s.PlaceWord(x+1, y+1, word)
+}
+
+func (s *Screen) String() string {
+	var stringVal string
+	for _, runeLine := range s.runes {
+		stringVal += string(runeLine) + "\n"
+	}
+	return stringVal
 }
 
 func NewScreen(width int, height int) *Screen {
@@ -65,8 +75,9 @@ func NewScreen(width int, height int) *Screen {
 	}
 
 	return &Screen{
-		width:  width,
-		height: height,
-		runes:  runes,
+		width:    width,
+		height:   height,
+		runes:    runes,
+		boxStyle: GetDefaultBoxRuneMap(),
 	}
 }
