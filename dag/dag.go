@@ -74,10 +74,12 @@ func (c *Context) Parse(input string) {
 }
 
 func (c *Context) CreateNode(label string) {
+	// handle already created
 	if c.NodeLabelIdMap[label] != 0 {
 		return
 	}
 
+	// create empty node
 	newNodeId := len(c.Nodes)
 	c.Nodes = append(c.Nodes, Node{
 		DownwardClosure:       nil,
@@ -99,6 +101,7 @@ func (c *Context) CreateNode(label string) {
 }
 
 func (c *Context) AddConnector(aId, bId int) {
+	// create connector node
 	cId := len(c.Nodes)
 	c.Nodes = append(c.Nodes, Node{
 		DownwardClosure:       nil,
@@ -117,6 +120,7 @@ func (c *Context) AddConnector(aId, bId int) {
 	})
 	c.NodeLabels = append(c.NodeLabels, "connector")
 
+	// insert connector node between nodeA and nodeB
 	c.Nodes[aId].DownwardNodeIds.Remove(bId)
 	c.Nodes[bId].UpwardNodeIds.Remove(aId)
 	c.Nodes[aId].DownwardNodeIds.Add(cId)
@@ -125,12 +129,32 @@ func (c *Context) AddConnector(aId, bId int) {
 	c.Nodes[bId].UpwardNodeIds.Add(cId)
 }
 
-func (c *Context) AddVertex(a, b string) {
-	return
+func (c *Context) AddVertex(aLabel, bLabel string) {
+	// place nodeB below nodeA
+	c.Nodes[c.NodeLabelIdMap[aLabel]].DownwardNodeIds.Add(c.NodeLabelIdMap[bLabel])
+	c.Nodes[c.NodeLabelIdMap[bLabel]].UpwardNodeIds.Add(c.NodeLabelIdMap[aLabel])
 }
 
-func (c *Context) TopoSort() bool {
-	return false
+func (c *Context) TopoSort() (success bool) {
+	i := 0
+	isThereMoreWork := true
+	for isThereMoreWork {
+		i++
+		isThereMoreWork = false
+		for a := 0; a < len(c.Nodes); a++ {
+			for b := range c.Nodes[a].DownwardNodeIds {
+				if c.Nodes[b].Layer <= c.Nodes[a].Layer {
+					c.Nodes[b].Layer = c.Nodes[a].Layer + 1
+					isThereMoreWork = true
+				}
+			}
+		}
+		// detect cycles
+		if i > len(c.Nodes)*len(c.Nodes) {
+			return false
+		}
+	}
+	return true
 }
 
 func (c *Context) Complete() {
