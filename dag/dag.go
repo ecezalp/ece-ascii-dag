@@ -3,6 +3,7 @@ package dag
 import (
 	. "ece-ascii-dag/screen"
 	. "ece-ascii-dag/util"
+	"strings"
 )
 
 type Node struct {
@@ -70,7 +71,16 @@ func (c *Context) Process(input string) string {
 }
 
 func (c *Context) Parse(input string) {
-	return
+	for _, line := range strings.Split(input, "\n") {
+		parts := strings.Split(line, "->")
+		for i := range parts {
+			name := strings.TrimSpace(parts[i])
+			c.CreateNode(name)
+			if i > 0 {
+				c.AddVertex(parts[i-1], name)
+			}
+		}
+	}
 }
 
 func (c *Context) CreateNode(label string) {
@@ -158,11 +168,57 @@ func (c *Context) TopoSort() (success bool) {
 }
 
 func (c *Context) Complete() {
-	return
+	isThereMoreWork := true
+	for isThereMoreWork {
+		isThereMoreWork = false
+		for a := 0; a < len(c.Nodes); a++ {
+			for b := range c.Nodes[a].DownwardNodeIds {
+				if c.Nodes[a].Layer+1 != c.Nodes[b].Layer {
+					isThereMoreWork = true
+					c.AddConnector(a, b)
+					break
+				}
+			}
+		}
+	}
 }
 
 func (c *Context) AddToLayers() {
-	return
+	//Compute the number of layers necessary.
+	var lastLayer int
+	for _, node := range c.Nodes {
+		if node.Layer > lastLayer {
+			lastLayer = node.Layer
+		}
+	}
+	c.Layers = make([]Layer, lastLayer+1)
+
+	// Put the elements in the layers.
+	for i, node := range c.Nodes {
+		c.Layers[node.Layer].NodeIds = append(c.Layers[node.Layer].NodeIds, i)
+	}
+
+	// OptimizeRowOrder();
+
+	//// Precompute upward_sorted, downward_sorted.
+	//for (Node& node : nodes) {
+	//	for (int i : node.upward)
+	//	node.upward_sorted.push_back(i);
+	//	for (int i : node.downward)
+	//	node.downward_sorted.push_back(i);
+	//	auto ByRow = [&](int a, int b) { return nodes[a].row < nodes[b].row; };
+	//std::sort(node.upward_sorted.begin(), node.upward_sorted.end(), ByRow);
+	//std::sort(node.downward_sorted.begin(), node.downward_sorted.end(), ByRow);
+	//}
+	//
+	//// Add the edges
+	//for (auto& layer : layers) {
+	//for (int up : layer.nodes) {
+	//for (int down : nodes[up].downward_sorted) {
+	//layer.edges.push_back({up, down, 0});
+	//}
+	//}
+	//}
 }
 
 func (c *Context) OptimizeRowOrder() {
