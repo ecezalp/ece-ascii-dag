@@ -3,6 +3,7 @@ package dag
 import (
 	. "ece-ascii-dag/screen"
 	. "ece-ascii-dag/util"
+	"sort"
 	"strings"
 )
 
@@ -198,32 +199,42 @@ func (c *Context) AddToLayers() {
 		c.Layers[node.Layer].NodeIds = append(c.Layers[node.Layer].NodeIds, i)
 	}
 
-	// OptimizeRowOrder();
+	// optimize row order
+	c.OptimizeRowOrder()
 
-	//// Precompute upward_sorted, downward_sorted.
-	//for (Node& node : nodes) {
-	//	for (int i : node.upward)
-	//	node.upward_sorted.push_back(i);
-	//	for (int i : node.downward)
-	//	node.downward_sorted.push_back(i);
-	//	auto ByRow = [&](int a, int b) { return nodes[a].row < nodes[b].row; };
-	//std::sort(node.upward_sorted.begin(), node.upward_sorted.end(), ByRow);
-	//std::sort(node.downward_sorted.begin(), node.downward_sorted.end(), ByRow);
-	//}
-	//
-	//// Add the edges
-	//for (auto& layer : layers) {
-	//for (int up : layer.nodes) {
-	//for (int down : nodes[up].downward_sorted) {
-	//layer.edges.push_back({up, down, 0});
-	//}
-	//}
-	//}
+	// Precompute upward_sorted, downward_sorted.
+	for _, node := range c.Nodes {
+		for upwardNodeId := range node.UpwardNodeIds {
+			node.UpwardNodeIdsSorted = append(node.UpwardNodeIdsSorted, upwardNodeId)
+		}
+		sort.Slice(node.UpwardNodeIds, func(i, j int) bool {
+			return c.Nodes[node.UpwardNodeIdsSorted[i]].Row < c.Nodes[node.UpwardNodeIdsSorted[j]].Row
+		})
+		for downwardNodeId := range node.DownwardNodeIds {
+			node.DownwardNodeIdsSorted = append(node.DownwardNodeIdsSorted, downwardNodeId)
+		}
+		sort.Slice(node.DownwardNodeIds, func(i, j int) bool {
+			return c.Nodes[node.DownwardNodeIdsSorted[i]].Row < c.Nodes[node.DownwardNodeIdsSorted[j]].Row
+		})
+	}
+
+	// Add the edges
+	for _, layer := range c.Layers {
+		for upwardNodeId := range layer.NodeIds {
+			for downwardNodeId := range c.Nodes[upwardNodeId].DownwardNodeIdsSorted {
+				layer.Edges = append(layer.Edges, Edge{
+					UpwardNodeId:   upwardNodeId,
+					DownwardNodeId: downwardNodeId,
+					X:              0,
+					Y:              0,
+				})
+			}
+		}
+	}
 }
 
 func (c *Context) OptimizeRowOrder() {
 	computeDownwardClosure := func() {
-		// y -2 because the very last layer is edges with nothing downward. and the layer before that are connectors ( I think)
 		for y := len(c.Layers) - 2; y > 0; y-- {
 			currentLayer := &c.Layers[y]
 			for _, upwardNodeId := range currentLayer.NodeIds {
@@ -238,14 +249,11 @@ func (c *Context) OptimizeRowOrder() {
 		}
 	}
 
-	computeDownwardDistances := func(layerId int, layerWidth int) {
-		// create matrix
+	computeDownwardDistances := func(layerId int, layerWidth int) [][]int {
 		distanceMatrix := make([][]int, layerWidth)
 		for i := range distanceMatrix {
 			distanceMatrix[i] = make([]int, layerWidth)
 		}
-
-		// calculate matrix values
 		for a := 0; a < layerWidth; a++ {
 			for b := 0; b < layerWidth; b++ {
 				nodeA := &c.Nodes[c.Layers[layerId].NodeIds[a]]
@@ -262,99 +270,88 @@ func (c *Context) OptimizeRowOrder() {
 				}
 			}
 		}
+		return distanceMatrix
+	}
 
+	computeParentMean := func(layerId int, layerWidth int) []float64 {
+		parentMeans := make([]float64, layerWidth)
+		for a := 0; a < layerWidth; a++ {
+			accumulatedRowSum := 0.0
+			downwardNode := c.Nodes[c.Layers[layerId].NodeIds[a]]
+			for b := range downwardNode.UpwardNodeIds {
+				upwardNode := c.Nodes[b]
+				accumulatedRowSum += float64(upwardNode.Row)
+			}
+			parentMeans[a] = accumulatedRowSum / (float64(len(downwardNode.UpwardNodeIds)) + 0.01)
+		}
+		return parentMeans
+	}
+
+	computePermutationSlice := func(layerWidth int) []int {
+		permutation := make([]int, layerWidth)
+		for i := 0; i < layerWidth; i++ {
+			permutation[i] = i
+		}
+		return permutation
+	}
+
+	evaluateScore := func(layerWidth int, distanceMatrix [][]int, permutation []int, parentMeans []float64) float64 {
+		score := 0.0
+		for i := 0; i < layerWidth-1; i++ {
+			score += float64(distanceMatrix[permutation[i]][permutation[i+1]])
+		}
+		for i := 0; i < layerWidth; i++ {
+			d := float64(i) - parentMeans[permutation[i]]
+			score += d * d * 15
+		}
+		return score
+	}
+
+	findLowestScore := func(score float64, layerWidth int, distanceMatrix [][]int, permutation []int, parentMeans []float64) {
+		scoreLastLoop := 0.0
+		for score != scoreLastLoop {
+			scoreLastLoop = score
+			for a := 0; a < layerWidth; a++ {
+				for b := 0; b < layerWidth; b++ {
+					permutation[a], permutation[b] = permutation[b], permutation[a]
+					newScore := evaluateScore(layerWidth, distanceMatrix, permutation, parentMeans)
+					if newScore < score {
+						score = newScore
+					} else {
+						permutation[a], permutation[b] = permutation[b], permutation[a]
+					}
+				}
+			}
+		}
+	}
+
+	reorderNodeIds := func(layerId int, layerWidth int, permutation []int) {
+		orderedNodeIds := make([]int, layerWidth)
+		for i, p := range permutation {
+			orderedNodeIds[i] = c.Layers[layerId].NodeIds[p]
+		}
+		c.Layers[layerId].NodeIds = orderedNodeIds
+	}
+
+	computeRows := func(layerId int, layerWidth int) {
+		for i := 0; i < layerWidth; i++ {
+			node := &c.Nodes[c.Layers[layerId].NodeIds[i]]
+			node.Row = i
+		}
 	}
 
 	computeDownwardClosure()
 	for layerId, layer := range c.Layers {
-		computeDownwardDistances(layerId, len(layer.NodeIds))
-
+		layerWidth := len(layer.NodeIds)
+		distanceMatrix := computeDownwardDistances(layerId, layerWidth)
+		parentMeans := computeParentMean(layerId, layerWidth)
+		permutation := computePermutationSlice(layerWidth)
+		score := evaluateScore(layerWidth, distanceMatrix, permutation, parentMeans)
+		findLowestScore(score, layerWidth, distanceMatrix, permutation, parentMeans)
+		evaluateScore(layerWidth, distanceMatrix, permutation, parentMeans)
+		reorderNodeIds(layerId, layerWidth, permutation)
+		computeRows(layerId, layerWidth)
 	}
-
-	//for _, layer := range c.layers {
-	//	layerWidth := len(layer.nodes)
-	//
-	//	// Compute inter-node downward distances.
-	//	distances := make([][]int, layerWidth)
-	//	for i := range distances {
-	//		distances[i] = make([]int, layerWidth)
-	//	}
-	//	for a := 0; a < layerWidth; a++ {
-	//		for b := 0; b < layerWidth; b++ {
-	//			nodeA := &c.nodes[layer.nodes[a]]
-	//			nodeB := &c.nodes[layer.nodes[b]]
-	//			intersection := make([]int, 0)
-	//			for ancestor := range nodeA.downwardClosure {
-	//				if nodeB.downwardClosure[ancestor] {
-	//					intersection = append(intersection, ancestor)
-	//				}
-	//			}
-	//			for _, ancestor := range intersection {
-	//				d := distances[a][b]
-	//				distances[a][b] = min(d, c.nodes[ancestor].Layer-c.nodes[layer.nodes[a]].Layer)
-	//			}
-	//		}
-	//	}
-	//
-	//	parentMean := make([]float64, layerWidth)
-	//	for a := 0; a < layerWidth; a++ {
-	//		d := 0.0
-	//		nodeDown := &c.nodes[layer.nodes[a]]
-	//		for _, b := range nodeDown.Upward {
-	//			nodeUp := &c.nodes[b]
-	//			d += float64(nodeUp.Row)
-	//		}
-	//		parentMean[a] = d / (float64(len(nodeDown.Upward)) + 0.01)
-	//	}
-	//
-	//	permutation := make([]int, layerWidth)
-	//	for i := 0; i < layerWidth; i++ {
-	//		permutation[i] = i
-	//	}
-	//
-	//	evaluateScore := func() float64 {
-	//		score := 0.0
-	//		for i := 0; i < layerWidth-1; i++ {
-	//			score += float64(distances[permutation[i]][permutation[i+1]])
-	//		}
-	//		for i := 0; i < layerWidth; i++ {
-	//			d := float64(i) - parentMean[permutation[i]]
-	//			score += d * d * 15
-	//		}
-	//		return score
-	//	}
-	//
-	//	score := evaluateScore()
-	//	scoreLastLoop := 0.0
-	//	for score != scoreLastLoop {
-	//		scoreLastLoop = score
-	//		for a := 0; a < layerWidth; a++ {
-	//			for b := 0; b < layerWidth; b++ {
-	//				permutation[a], permutation[b] = permutation[b], permutation[a]
-	//				newScore := evaluateScore()
-	//				if newScore < score {
-	//					score = newScore
-	//				} else {
-	//					permutation[a], permutation[b] = permutation[b], permutation[a]
-	//				}
-	//			}
-	//		}
-	//	}
-	//
-	//	// Reorder the nodes inside the layer.
-	//	orderedNodes := make([]int, layerWidth)
-	//	for i, p := range permutation {
-	//		orderedNodes[i] = layer.nodes[p]
-	//	}
-	//	layer.nodes = orderedNodes
-	//
-	//	// Precompute every node's row.
-	//	for i := 0; i < layerWidth; i++ {
-	//		node := &c.nodes[layer.nodes[i]]
-	//		node.Row = i
-	//	}
-	//}
-
 }
 
 func (c *Context) ResolveCrossingEdges() {
