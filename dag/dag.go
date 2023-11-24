@@ -44,10 +44,211 @@ type Adapter struct {
 	Y         int
 }
 
-func NewAdapter() *Adapter {
+// Edge represents an edge between two nodes.
+type AdapterEdge struct {
+	A        *AdapterNode
+	B        *AdapterNode
+	Weight   int
+	Assigned int
+}
+
+// Node represents a node in the graph.
+type AdapterNode struct {
+	Visited bool
+	Cost    int
+	Edges   []*AdapterEdge
+}
+
+func NewAdapter(inputs []Set, outputs []Set) Adapter {
+	solutionFound := false
+	height := 3
+	width := len(inputs)
+	var adapterNodes []AdapterNode
+	var adapterEdges []AdapterEdge
+	connectorLength := 0
+	for _, input := range inputs {
+		inputSlice := input.Slice()
+		connectorLength = max(connectorLength, len(inputSlice))
+	}
+	for !solutionFound {
+		adapterNodes = make([]AdapterNode, width*height*2)
+		adapterEdges = make([]AdapterEdge, width*height*3)
+
+		IndexFunc := func(x, y, layer int) int {
+			return x + width*(y+height*layer)
+		}
+
+		ConnectFunc := func(edge AdapterEdge, nodeA AdapterNode, nodeB AdapterNode, weight int) {
+			edge.A = &nodeA
+			edge.B = &nodeB
+			edge.Weight = weight
+			nodeA.Edges = append(nodeA.Edges, &edge)
+			nodeB.Edges = append(nodeB.Edges, &edge)
+		}
+
+		for y := 0; y < height; y++ {
+			for x := 0; x < width; x++ {
+				// vertical
+				if y != height-1 {
+					ConnectFunc(
+						adapterEdges[IndexFunc(x, y+0, 0)],
+						adapterNodes[IndexFunc(x, y+0, 0)],
+						adapterNodes[IndexFunc(x, y+1, 0)],
+						1,
+					)
+				}
+			}
+		}
+	}
+
+	//
+	//		// Horizontal:
+	//		if (y >= 1 && y<= height - 3 && x != width-1) {
+	//		connect(edges[index(x + 0, y, 1)],  //
+	//		nodes[index(x + 0, y, 1)],  //
+	//		nodes[index(x + 1, y, 1)],  //
+	//		1);
+	//	}
+	//
+	//		// Corners:
+	//	{
+	//		//int dx = width / 2 - x;
+	//		int dy = height / 2 - y;
+	//		connect(edges[index(x, y, 2)],  //
+	//		nodes[index(x, y, 0)],  //
+	//		nodes[index(x, y, 1)],  //
+	//		10+dy*dy);
+	//	}
+	//	}
+	//	}
+	//
+	//		// Assume a solution will be found. Otherwise, it will be reset to false.
+	//		solution_found = true;
+	//
+	//		// Add path one by one.
+	//		for(int connector = 1; connector <= connector_length; ++connector) {
+	//
+	//		int big_number = 1 << 15;
+	//
+	//		// Clear:
+	//		for (auto& node : nodes) {
+	//		node.visited = false;
+	//		node.cost = big_number;
+	//	}
+	//
+	//		std::set<Node*> start;
+	//		std::set<Node*> end;
+	//		for(int x = 0; x<width; ++x) {
+	//		if (inputs[x].count(connector))
+	//		start.insert(&nodes[index(x, 0, 0)]);
+	//		if (outputs[x].count(connector))
+	//		end.insert(&nodes[index(x, height - 1, 0)]);
+	//	}
+	//
+	//	struct NodeAndCost {
+	//		Node* node;
+	//		int cost;
+	//		bool operator<(const NodeAndCost& other) const {
+	//		return cost > other.cost;
+	//	}
+	//	};
+	//
+	//		std::priority_queue<NodeAndCost> pending;
+	//		for (auto& node : start) {
+	//		pending.push({node, 0});
+	//	}
+	//
+	//		while (pending.size() != 0) {
+	//		auto element = pending.top();
+	//		pending.pop();
+	//		Node* node = element.node;
+	//		if (node->visited)
+	//		continue;
+	//		node->visited = true;
+	//		node->cost = element.cost;
+	//		for (Edge* edge : node->edges) {
+	//		Node* opposite = edge->a == node ? edge->b : edge->a;
+	//		if (opposite->visited)
+	//		continue;
+	//		if (edge->assigned)
+	//		continue;
+	//		pending.push({opposite, node->cost + edge->weight});
+	//	}
+	//	}
+	//
+	//		// Reconstruct the path from end to start.
+	//		int best_score = big_number;
+	//		Node* current = nullptr;
+	//		for(Node* node : end) {
+	//		if (best_score >= node->cost) {
+	//		best_score = node->cost;
+	//		current = node;
+	//	}
+	//	}
+	//		// No path found.
+	//		if (best_score == big_number) {
+	//		solution_found = false;
+	//		continue;
+	//	}
+	//
+	//		while (!start.count(current)) {
+	//		for (Edge* edge : current->edges) {
+	//		Node* opposite = edge->a == current ? edge->b : edge->a;
+	//		if (current->cost == opposite->cost + edge->weight) {
+	//		edge->assigned = connector;
+	//		current = opposite;
+	//	}
+	//	}
+	//	}
+	//
+	//		for (int y = 0; y < height; ++y) {
+	//		for (int x = 0; x < width; ++x) {
+	//		if (edges[index(x, y, 0)].assigned)
+	//		edges[index(x, y, 1)].weight = 20;
+	//		if (edges[index(x, y, 1)].assigned)
+	//		edges[index(x, y, 0)].weight = 20;
+	//	}
+	//	}
+	//	}
+	//
+	//		if (height > 30)
+	//		solution_found = true;
+	//
+	//		auto assigned = [&](int x, int y, int layer) -> bool {
+	//		return edges[index(x, y, layer)].assigned;
+	//	};
+	//
+	//		if (!solution_found) {
+	//		height++;
+	//		continue;
+	//	}
+	//
+	//		rendering = std::vector<std::vector<wchar_t>>(
+	//		height, std::vector<wchar_t>(width, L' '));
+	//		for (int y = 0; y < height; ++y) {
+	//		for (int x = 0; x < width; ++x) {
+	//		wchar_t& v = rendering[y][x];
+	//		if (assigned(x, y, 1))
+	//		v = L'─';
+	//		if (assigned(x, y, 0))
+	//		v = L'│';
+	//		if (assigned(x, y, 2)) {
+	//		if (assigned(x, y, 0))
+	//		v = assigned(x, y, 1) ? L'┌' : L'┐';
+	//		else
+	//		v = assigned(x, y, 1) ? L'└' : L'┘';
+	//	}
+	//	}
+	//	}
+	//		return;
+	//	}
+
 	// Implement the Construct function here
-	adapter := Adapter{}
-	return &adapter
+	adapter := Adapter{
+		Inputs:  inputs,
+		Outputs: outputs,
+	}
+	return adapter
 }
 
 func (a *Adapter) Render(screen *Screen) {
@@ -355,31 +556,216 @@ func (c *Context) OptimizeRowOrder() {
 }
 
 func (c *Context) ResolveCrossingEdges() {
-	return
+	for _, layer := range c.Layers {
+		upwardEdges := layer.Edges
+		downwardEdges := layer.Edges
+
+		sort.Slice(upwardEdges, func(i, j int) bool {
+			iUpwardNodeRow := c.Nodes[upwardEdges[i].UpwardNodeId].Row
+			jUpwardNodeRow := c.Nodes[upwardEdges[j].UpwardNodeId].Row
+			iDownwardNodeRow := c.Nodes[upwardEdges[i].DownwardNodeId].Row
+			jDownwardNodeRow := c.Nodes[upwardEdges[j].DownwardNodeId].Row
+
+			return iUpwardNodeRow < jUpwardNodeRow ||
+				(iUpwardNodeRow == jUpwardNodeRow && iDownwardNodeRow < jDownwardNodeRow)
+		})
+
+		sort.Slice(downwardEdges, func(i, j int) bool {
+			iDownwardNodeRow := c.Nodes[downwardEdges[i].DownwardNodeId].Row
+			jDownwardNodeRow := c.Nodes[downwardEdges[j].DownwardNodeId].Row
+			iUpwardNodeRow := c.Nodes[downwardEdges[i].UpwardNodeId].Row
+			jUpwardNodeRow := c.Nodes[downwardEdges[j].UpwardNodeId].Row
+
+			return iDownwardNodeRow < jDownwardNodeRow ||
+				(iDownwardNodeRow == jDownwardNodeRow && iUpwardNodeRow < jUpwardNodeRow)
+		})
+
+		for i := 0; i < len(upwardEdges); i++ {
+			if !(upwardEdges[i] == downwardEdges[i]) {
+				layer.Edges = []Edge{}
+				layer.Adapter.IsEnabled = true
+			}
+		}
+	}
 }
 
 func (c *Context) Layout() {
-	return
+	// x-axis: minimal size to draw their content.
+	for i, node := range c.Nodes {
+		if node.IsConnector {
+			node.Width = 1
+		} else {
+			node.Width = max(0, len(c.NodeLabels[i]))
+			node.Width = max(node.Width, len(node.UpwardNodeIds))
+			node.Width = max(node.Width, len(node.DownwardNodeIds))
+			node.Width += 2
+		}
+	}
+
+	for i := 0; i < 1000; i++ {
+		if !c.isLayoutNodesNotTouching() {
+			continue
+		}
+		if !c.isLayoutNodesNotTouching() {
+			continue
+		}
+		if !c.LayoutGrowNode() {
+			continue
+		}
+		if !c.LayoutShiftEdges() {
+			continue
+		}
+		if !c.LayoutShiftConnectorNode() {
+			continue
+		}
+		break
+	}
+
+	for y := 0; y < len(c.Layers)-1; y++ {
+		upwardLayer := c.Layers[y]
+		downwardLayer := c.Layers[y+1]
+		if upwardLayer.Adapter.IsEnabled {
+			continue
+		}
+		width := 0
+		for _, nodeId := range upwardLayer.NodeIds {
+			width = max(width, c.Nodes[nodeId].X+c.Nodes[nodeId].Width)
+		}
+		for _, nodeId := range downwardLayer.NodeIds {
+			width = max(width, c.Nodes[nodeId].X+c.Nodes[nodeId].Width)
+		}
+
+		type Pair struct {
+			Origin, Destination int
+		}
+
+		ids := make(map[Pair]int)
+		getId := func(origin int, destination int) int {
+			value := ids[Pair{Origin: origin, Destination: destination}]
+			if value == 0 {
+				value = len(ids)
+			}
+			return value
+		}
+		input := make([]Set, width)
+		output := make([]Set, width)
+
+		for _, nodeIdA := range upwardLayer.NodeIds {
+			nodeA := c.Nodes[nodeIdA]
+			for x := nodeA.X + nodeA.Padding; x < nodeA.X-nodeA.Padding+nodeA.Width; x++ {
+				for downwardNodeId := range nodeA.DownwardNodeIds {
+					input[x].Add(getId(nodeIdA, downwardNodeId))
+				}
+			}
+		}
+
+		for _, nodeIdB := range downwardLayer.NodeIds {
+			nodeB := c.Nodes[nodeIdB]
+			for x := nodeB.X + nodeB.Padding; x < nodeB.X-nodeB.Padding+nodeB.Width; x++ {
+				for upwardNodeId := range nodeB.UpwardNodeIds {
+					output[x].Add(getId(upwardNodeId, nodeIdB))
+				}
+			}
+		}
+
+		upwardLayer.Adapter = NewAdapter(input, output)
+	}
+
+	// y-axis: size and position.
+	y := 0
+	for _, layer := range c.Layers {
+		for _, nodeId := range layer.NodeIds {
+			node := c.Nodes[nodeId]
+			node.Y = y
+			node.Height = 3
+		}
+
+		for _, edge := range layer.Edges {
+			edge.Y = y + 2
+
+			if layer.Adapter.IsEnabled {
+				layer.Adapter.Y = y + 2
+				y += layer.Adapter.Height - 3
+			}
+
+			y += 3
+		}
+	}
 }
 
-func (c *Context) LayoutNodeDoNotTouch() bool {
-	return false
+func (c *Context) isLayoutNodesNotTouching() bool {
+	isNotTouching := true
+	for _, layer := range c.Layers {
+		x := 0
+		for _, nodeId := range layer.NodeIds {
+			if c.Nodes[nodeId].X < x {
+				isNotTouching = false
+			}
+			x = c.Nodes[nodeId].X + c.Nodes[nodeId].Width
+		}
+	}
+	return isNotTouching
 }
 
-func (c *Context) LayoutEdgesDoNotTouch() bool {
-	return false
-}
-
+// LayoutGrowNode Grow the nodes to fit their edges
 func (c *Context) LayoutGrowNode() bool {
-	return false
+	for _, layer := range c.Layers {
+		for _, edge := range layer.Edges {
+			upwardNode := c.Nodes[edge.UpwardNodeId]
+			if upwardNode.X+upwardNode.Width-2 < edge.X && !upwardNode.IsConnector {
+				upwardNode.Width = edge.X + 2 - upwardNode.X
+				return false
+			}
+
+			downwardNode := c.Nodes[edge.DownwardNodeId]
+			if downwardNode.X+downwardNode.Width-2 < edge.X && !downwardNode.IsConnector {
+				downwardNode.Width = edge.X + 2 - downwardNode.X
+				return false
+			}
+		}
+	}
+
+	return true
 }
 
+// LayoutShiftEdges Shift the edges to the right, so that they reach their nodes.
 func (c *Context) LayoutShiftEdges() bool {
-	return false
+	for _, layer := range c.Layers {
+		for _, edge := range layer.Edges {
+			upwardNode := c.Nodes[edge.UpwardNodeId]
+			downwardNode := c.Nodes[edge.DownwardNodeId]
+			minX := max(upwardNode.X+upwardNode.Padding, downwardNode.X+downwardNode.Padding)
+			if edge.X < minX {
+				edge.X = minX
+				return false
+			}
+		}
+	}
+	return true
 }
 
 func (c *Context) LayoutShiftConnectorNode() bool {
-	return false
+	for nodeId, node := range c.Nodes {
+		if !node.IsConnector {
+			continue
+		}
+		minX := 0
+		for _, edge := range c.Layers[node.Layer-1].Edges {
+			if edge.DownwardNodeId == nodeId {
+				minX = max(minX, edge.X)
+			}
+		}
+		for _, edge := range c.Layers[node.Layer].Edges {
+			if edge.UpwardNodeId == nodeId {
+				minX = max(minX, edge.X)
+			}
+		}
+		if node.X < minX {
+			node.X = minX
+			return false
+		}
+	}
+	return true
 }
 
 func (c *Context) Render() string {

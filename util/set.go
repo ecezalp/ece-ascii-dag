@@ -21,3 +21,11 @@ func (s Set) Remove(item int) {
 func (s Set) Size() int {
 	return len(s)
 }
+
+func (s Set) Slice() []int {
+	var intSlice []int
+	for item := range s {
+		intSlice = append(intSlice, item)
+	}
+	return intSlice
+}
