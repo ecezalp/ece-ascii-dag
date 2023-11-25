@@ -2,72 +2,35 @@ package dag
 
 import (
 	. "ece-ascii-dag/screen"
-	. "ece-ascii-dag/util"
 	"sort"
 	"strings"
 )
 
-type Node struct {
-	DownwardClosure       Set
-	DownwardNodeIds       Set
-	DownwardNodeIdsSorted []int
-	Height                int
-	IsConnector           bool
-	Layer                 int
-	Padding               int
-	Row                   int
-	UpwardNodeIds         Set
-	UpwardNodeIdsSorted   []int
-	Width                 int
-	X                     int
-	Y                     int
+func max(a int, b int) int {
+	if a > b {
+		return a
+	}
+	return b
 }
 
-type Edge struct {
-	DownwardNodeId int
-	UpwardNodeId   int
-	X              int
-	Y              int
+func min(a int, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }
 
-func (a *Edge) isEqualTo(b *Edge) bool {
-	return a.UpwardNodeId == b.UpwardNodeId &&
-		a.DownwardNodeId == b.DownwardNodeId
-}
-
-type Adapter struct {
-	Height    int
-	Inputs    []Set
-	IsEnabled bool
-	Outputs   []Set
-	Runes     [][]rune
-	Y         int
-}
-
-// Edge represents an edge between two nodes.
-type AdapterEdge struct {
-	A        *AdapterNode
-	B        *AdapterNode
-	Weight   int
-	Assigned int
-}
-
-// Node represents a node in the graph.
-type AdapterNode struct {
-	Visited bool
-	Cost    int
-	Edges   []*AdapterEdge
-}
-
-func NewAdapter(inputs []Set, outputs []Set) Adapter {
+func NewAdapter(inputs []IntSet, outputs []IntSet) Adapter {
 	solutionFound := false
 	height := 3
 	width := len(inputs)
 	var adapterNodes []AdapterNode
 	var adapterEdges []AdapterEdge
+	rendering := make([][]rune, height)
+
 	connectorLength := 0
-	for _, input := range inputs {
-		inputSlice := input.Slice()
+	for _, inputItem := range inputs {
+		inputSlice := inputItem.Slice()
 		connectorLength = max(connectorLength, len(inputSlice))
 	}
 	for !solutionFound {
@@ -88,6 +51,7 @@ func NewAdapter(inputs []Set, outputs []Set) Adapter {
 
 		for y := 0; y < height; y++ {
 			for x := 0; x < width; x++ {
+
 				// vertical
 				if y != height-1 {
 					ConnectFunc(
@@ -97,168 +61,183 @@ func NewAdapter(inputs []Set, outputs []Set) Adapter {
 						1,
 					)
 				}
+
+				// horizontal
+				if y >= 1 && y <= height-3 && x != width-1 {
+					ConnectFunc(
+						adapterEdges[IndexFunc(x+0, y, 1)],
+						adapterNodes[IndexFunc(x+0, y, 1)],
+						adapterNodes[IndexFunc(x+1, y, 1)],
+						1,
+					)
+				}
+
+				// corners
+				dy := height/2 - y
+				ConnectFunc(
+					adapterEdges[IndexFunc(x, y, 2)],
+					adapterNodes[IndexFunc(x, y, 0)],
+					adapterNodes[IndexFunc(x, y, 1)],
+					10+dy*dy,
+				)
+			}
+		}
+
+		// try a solution
+		solutionFound = true
+
+		// add path one by one
+		for connectorId := 1; connectorId < connectorLength; connectorId++ {
+			bigNumber := 1 << 15
+
+			// clear previous costs
+			for _, node := range adapterNodes {
+				node.Visited = false
+				node.Cost = bigNumber
+			}
+
+			start := NewNodeSet()
+			end := NewNodeSet()
+
+			for xVal := 0; xVal < width; xVal++ {
+				if inputs[xVal].Contains(connectorId) {
+					start.Add(&adapterNodes[IndexFunc(xVal, 0, 0)])
+				}
+				if outputs[xVal].Contains(connectorId) {
+					end.Add(&adapterNodes[IndexFunc(xVal, height-1, 0)])
+				}
+
+				var pending NodeAndCostHeap
+				for node := range start {
+					pending.Push(NodeAndCost{
+						Node: node,
+						Cost: 0,
+					})
+				}
+
+				for pending.Len() != 0 {
+					item := pending.Pop()
+					node := item.Node
+					if node.Visited {
+						continue
+					}
+					node.Visited = true
+					node.Cost = item.Cost
+					for _, edge := range node.Edges {
+						oppositeNode := edge.A
+						if edge.A == node {
+							oppositeNode = edge.B
+						}
+						if oppositeNode.Visited {
+							continue
+						}
+						if edge.Assigned != 0 {
+							continue
+						}
+						pending.Push(
+							NodeAndCost{
+								Node: oppositeNode,
+								Cost: node.Cost + edge.Weight,
+							},
+						)
+					}
+				}
+
+				// Reconstruct the path from end to start.
+				bestScore := bigNumber
+				var currentNode *AdapterNode
+				for endNode := range end {
+					if bestScore >= endNode.Cost {
+						bestScore = endNode.Cost
+						currentNode = endNode
+					}
+				}
+
+				// No path found.
+				if bestScore == bigNumber {
+					solutionFound = false
+					continue
+				}
+
+				for !start.Contains(currentNode) {
+					for _, edge := range currentNode.Edges {
+						oppositeNode := edge.A
+						if edge.A == currentNode {
+							oppositeNode = edge.B
+						}
+						if currentNode.Cost == oppositeNode.Cost+edge.Weight {
+							edge.Assigned = connectorId
+							currentNode = oppositeNode
+						}
+					}
+				}
+
+				isAssignedFunc := func(x int, y int, layer int) bool {
+					return adapterEdges[IndexFunc(x, y, layer)].Assigned != 0
+				}
+
+				for itemY := 0; itemY < height; itemY++ {
+					for itemX := 0; itemX < width; itemX++ {
+						if isAssignedFunc(itemX, itemY, 0) {
+							adapterEdges[IndexFunc(itemX, itemY, 1)].Weight = 20
+						}
+						if isAssignedFunc(itemX, itemY, 1) {
+							adapterEdges[IndexFunc(itemX, itemY, 0)].Weight = 20
+						}
+					}
+				}
+
+				if height > 30 {
+					solutionFound = true
+				}
+
+				if !solutionFound {
+					height++
+					continue
+				}
+
+				for i := range rendering {
+					rendering[i] = make([]rune, width)
+					for j := range rendering[i] {
+						rendering[i][j] = ' '
+					}
+				}
+
+				for y := 0; y < height; y++ {
+					for x := 0; x < width; x++ {
+						if isAssignedFunc(x, y, 1) {
+							rendering[y][x] = '─'
+						}
+						if isAssignedFunc(x, y, 0) {
+							rendering[y][x] = '│'
+						}
+						if isAssignedFunc(x, y, 2) {
+							if isAssignedFunc(x, y, 0) {
+								if isAssignedFunc(x, y, 1) {
+									rendering[y][x] = '┌'
+								} else {
+									rendering[y][x] = '┐'
+								}
+							} else {
+								if isAssignedFunc(x, y, 1) {
+									rendering[y][x] = '└'
+								} else {
+									rendering[y][x] = '┘'
+								}
+							}
+						}
+					}
+				}
 			}
 		}
 	}
-
-	//
-	//		// Horizontal:
-	//		if (y >= 1 && y<= height - 3 && x != width-1) {
-	//		connect(edges[index(x + 0, y, 1)],  //
-	//		nodes[index(x + 0, y, 1)],  //
-	//		nodes[index(x + 1, y, 1)],  //
-	//		1);
-	//	}
-	//
-	//		// Corners:
-	//	{
-	//		//int dx = width / 2 - x;
-	//		int dy = height / 2 - y;
-	//		connect(edges[index(x, y, 2)],  //
-	//		nodes[index(x, y, 0)],  //
-	//		nodes[index(x, y, 1)],  //
-	//		10+dy*dy);
-	//	}
-	//	}
-	//	}
-	//
-	//		// Assume a solution will be found. Otherwise, it will be reset to false.
-	//		solution_found = true;
-	//
-	//		// Add path one by one.
-	//		for(int connector = 1; connector <= connector_length; ++connector) {
-	//
-	//		int big_number = 1 << 15;
-	//
-	//		// Clear:
-	//		for (auto& node : nodes) {
-	//		node.visited = false;
-	//		node.cost = big_number;
-	//	}
-	//
-	//		std::set<Node*> start;
-	//		std::set<Node*> end;
-	//		for(int x = 0; x<width; ++x) {
-	//		if (inputs[x].count(connector))
-	//		start.insert(&nodes[index(x, 0, 0)]);
-	//		if (outputs[x].count(connector))
-	//		end.insert(&nodes[index(x, height - 1, 0)]);
-	//	}
-	//
-	//	struct NodeAndCost {
-	//		Node* node;
-	//		int cost;
-	//		bool operator<(const NodeAndCost& other) const {
-	//		return cost > other.cost;
-	//	}
-	//	};
-	//
-	//		std::priority_queue<NodeAndCost> pending;
-	//		for (auto& node : start) {
-	//		pending.push({node, 0});
-	//	}
-	//
-	//		while (pending.size() != 0) {
-	//		auto element = pending.top();
-	//		pending.pop();
-	//		Node* node = element.node;
-	//		if (node->visited)
-	//		continue;
-	//		node->visited = true;
-	//		node->cost = element.cost;
-	//		for (Edge* edge : node->edges) {
-	//		Node* opposite = edge->a == node ? edge->b : edge->a;
-	//		if (opposite->visited)
-	//		continue;
-	//		if (edge->assigned)
-	//		continue;
-	//		pending.push({opposite, node->cost + edge->weight});
-	//	}
-	//	}
-	//
-	//		// Reconstruct the path from end to start.
-	//		int best_score = big_number;
-	//		Node* current = nullptr;
-	//		for(Node* node : end) {
-	//		if (best_score >= node->cost) {
-	//		best_score = node->cost;
-	//		current = node;
-	//	}
-	//	}
-	//		// No path found.
-	//		if (best_score == big_number) {
-	//		solution_found = false;
-	//		continue;
-	//	}
-	//
-	//		while (!start.count(current)) {
-	//		for (Edge* edge : current->edges) {
-	//		Node* opposite = edge->a == current ? edge->b : edge->a;
-	//		if (current->cost == opposite->cost + edge->weight) {
-	//		edge->assigned = connector;
-	//		current = opposite;
-	//	}
-	//	}
-	//	}
-	//
-	//		for (int y = 0; y < height; ++y) {
-	//		for (int x = 0; x < width; ++x) {
-	//		if (edges[index(x, y, 0)].assigned)
-	//		edges[index(x, y, 1)].weight = 20;
-	//		if (edges[index(x, y, 1)].assigned)
-	//		edges[index(x, y, 0)].weight = 20;
-	//	}
-	//	}
-	//	}
-	//
-	//		if (height > 30)
-	//		solution_found = true;
-	//
-	//		auto assigned = [&](int x, int y, int layer) -> bool {
-	//		return edges[index(x, y, layer)].assigned;
-	//	};
-	//
-	//		if (!solution_found) {
-	//		height++;
-	//		continue;
-	//	}
-	//
-	//		rendering = std::vector<std::vector<wchar_t>>(
-	//		height, std::vector<wchar_t>(width, L' '));
-	//		for (int y = 0; y < height; ++y) {
-	//		for (int x = 0; x < width; ++x) {
-	//		wchar_t& v = rendering[y][x];
-	//		if (assigned(x, y, 1))
-	//		v = L'─';
-	//		if (assigned(x, y, 0))
-	//		v = L'│';
-	//		if (assigned(x, y, 2)) {
-	//		if (assigned(x, y, 0))
-	//		v = assigned(x, y, 1) ? L'┌' : L'┐';
-	//		else
-	//		v = assigned(x, y, 1) ? L'└' : L'┘';
-	//	}
-	//	}
-	//	}
-	//		return;
-	//	}
-
-	// Implement the Construct function here
-	adapter := Adapter{
-		Inputs:  inputs,
-		Outputs: outputs,
+	return Adapter{
+		Inputs:    inputs,
+		Outputs:   outputs,
+		IsEnabled: false,
+		Runes:     rendering,
+		Height:    height,
 	}
-	return adapter
-}
-
-func (a *Adapter) Render(screen *Screen) {
-	// Implement the Render function here
-}
-
-type Layer struct {
-	Adapter Adapter
-	Edges   []Edge
-	NodeIds []int
 }
 
 type Context struct {
@@ -268,8 +247,26 @@ type Context struct {
 	Nodes          []Node
 }
 
+func DAGtoText(input string) string {
+	var context Context
+	context.NodeLabelIdMap = make(map[string]int)
+	return context.Process(input)
+}
+
 func (c *Context) Process(input string) string {
-	return ""
+	c.Parse(input)
+	if len(c.Nodes) == 0 {
+		return ""
+	}
+	if !c.TopoSort() {
+		return "There are cycles"
+	}
+
+	c.Complete()
+	c.AddToLayers()
+	c.ResolveCrossingEdges()
+	c.Layout()
+	return c.Render()
 }
 
 func (c *Context) Parse(input string) {
@@ -294,16 +291,16 @@ func (c *Context) CreateNode(label string) {
 	// create empty node
 	newNodeId := len(c.Nodes)
 	c.Nodes = append(c.Nodes, Node{
-		DownwardClosure:       nil,
-		DownwardNodeIds:       nil,
-		DownwardNodeIdsSorted: nil,
+		DownwardClosure:       NewIntSet(),
+		DownwardNodeIds:       NewIntSet(),
+		DownwardNodeIdsSorted: []int{},
 		Height:                0,
 		IsConnector:           false,
 		Layer:                 0,
 		Padding:               1,
 		Row:                   0,
-		UpwardNodeIds:         nil,
-		UpwardNodeIdsSorted:   nil,
+		UpwardNodeIds:         NewIntSet(),
+		UpwardNodeIdsSorted:   []int{},
 		Width:                 0,
 		X:                     0,
 		Y:                     0,
@@ -316,16 +313,16 @@ func (c *Context) AddConnector(aId, bId int) {
 	// create connector node
 	cId := len(c.Nodes)
 	c.Nodes = append(c.Nodes, Node{
-		DownwardClosure:       nil,
-		DownwardNodeIds:       nil,
-		DownwardNodeIdsSorted: nil,
+		DownwardClosure:       NewIntSet(),
+		DownwardNodeIds:       NewIntSet(),
+		DownwardNodeIdsSorted: []int{},
 		Height:                0,
 		IsConnector:           true,
 		Layer:                 c.Nodes[aId].Layer + 1,
 		Padding:               0,
 		Row:                   0,
-		UpwardNodeIds:         nil,
-		UpwardNodeIdsSorted:   nil,
+		UpwardNodeIds:         NewIntSet(),
+		UpwardNodeIdsSorted:   []int{},
 		Width:                 0,
 		X:                     0,
 		Y:                     0,
@@ -647,8 +644,8 @@ func (c *Context) Layout() {
 			}
 			return value
 		}
-		input := make([]Set, width)
-		output := make([]Set, width)
+		input := make([]IntSet, width)
+		output := make([]IntSet, width)
 
 		for _, nodeIdA := range upwardLayer.NodeIds {
 			nodeA := c.Nodes[nodeIdA]
@@ -769,5 +766,216 @@ func (c *Context) LayoutShiftConnectorNode() bool {
 }
 
 func (c *Context) Render() string {
-	return ""
+	width := 0
+	height := 0
+	for _, node := range c.Nodes {
+		width = max(width, node.X+node.Width)
+		height = max(height, node.Y+node.Height)
+	}
+
+	s := NewScreen(width, height)
+	for i, node := range c.Nodes {
+		if node.IsConnector {
+			if node.Width == 1 {
+				s.PlaceVerticalLine(node.Y, node.Y+2, node.X, s.BoxStyle["verticalLine"])
+			} else {
+				s.PlaceBox(node.X, node.Y, node.Width, node.Height)
+			}
+		} else {
+			s.PlaceBox(node.X, node.Y, node.Width, node.Height)
+			s.PlaceWord(node.X+1, node.Y+1, []rune(c.NodeLabels[i]))
+		}
+	}
+
+	for y := 0; y < len(c.Layers); y++ {
+		layer := c.Layers[y]
+		for _, edge := range layer.Edges {
+			up := '┬'
+			if c.Nodes[edge.UpwardNodeId].IsConnector {
+				up = '│'
+			}
+			down := '▽'
+			if c.Nodes[edge.DownwardNodeId].IsConnector {
+				up = '│'
+			}
+			s.PlaceRune(edge.X, edge.Y, up)
+			s.PlaceRune(edge.X, edge.Y+1, down)
+		}
+	}
+
+	for y := 0; y < len(c.Layers); y++ {
+		layer := c.Layers[y]
+		if layer.Adapter.IsEnabled {
+			layer.Adapter.Render(s)
+		}
+	}
+
+	return s.String()
+}
+
+type Node struct {
+	DownwardClosure       IntSet
+	DownwardNodeIds       IntSet
+	DownwardNodeIdsSorted []int
+	Height                int
+	IsConnector           bool
+	Layer                 int
+	Padding               int
+	Row                   int
+	UpwardNodeIds         IntSet
+	UpwardNodeIdsSorted   []int
+	Width                 int
+	X                     int
+	Y                     int
+}
+
+type Edge struct {
+	DownwardNodeId int
+	UpwardNodeId   int
+	X              int
+	Y              int
+}
+
+func (a *Edge) isEqualTo(b *Edge) bool {
+	return a.UpwardNodeId == b.UpwardNodeId &&
+		a.DownwardNodeId == b.DownwardNodeId
+}
+
+type Adapter struct {
+	Height    int
+	Inputs    []IntSet
+	IsEnabled bool
+	Outputs   []IntSet
+	Runes     [][]rune
+	Y         int
+}
+
+func (a *Adapter) Render(screen *Screen) {
+	for dy := 0; dy < a.Height-1; dy++ {
+		x := 0
+		for _, value := range a.Runes[dy] {
+			if value == ' ' {
+				x++
+				continue
+			}
+
+			currentRune := screen.ReadRune(x, a.Y+dy)
+			if dy == 0 {
+				if *currentRune == '─' {
+					*currentRune = '┬'
+					x++
+					continue
+				}
+			}
+
+			if dy == a.Height-2 {
+				if *currentRune == '─' {
+					*currentRune = '▽'
+					x++
+					continue
+				}
+			}
+
+			*currentRune = value
+			x++
+			continue
+		}
+	}
+}
+
+type Layer struct {
+	Adapter Adapter
+	Edges   []Edge
+	NodeIds []int
+}
+
+// Edge represents an edge between two nodes.
+type AdapterEdge struct {
+	A        *AdapterNode
+	B        *AdapterNode
+	Weight   int
+	Assigned int
+}
+
+// Node represents a node in the graph.
+type AdapterNode struct {
+	Visited bool
+	Cost    int
+	Edges   []*AdapterEdge
+}
+
+type NodeAndCost struct {
+	Node *AdapterNode
+	Cost int
+}
+
+type IntSet map[int]bool
+
+func NewIntSet() IntSet {
+	return make(map[int]bool)
+}
+
+func (s IntSet) Add(item int) {
+	s[item] = true
+}
+
+func (s IntSet) Contains(item int) bool {
+	return s[item]
+}
+
+func (s IntSet) Remove(item int) {
+	delete(s, item)
+}
+
+func (s IntSet) Size() int {
+	return len(s)
+}
+
+func (s IntSet) Slice() []int {
+	var intSlice []int
+	for item := range s {
+		intSlice = append(intSlice, item)
+	}
+	return intSlice
+}
+
+type NodeSet map[*AdapterNode]bool
+
+func NewNodeSet() NodeSet {
+	return make(NodeSet)
+}
+
+func (s NodeSet) Add(item *AdapterNode) {
+	s[item] = true
+}
+
+func (s NodeSet) Contains(item *AdapterNode) bool {
+	return s[item]
+}
+
+func (s NodeSet) Remove(item *AdapterNode) {
+	delete(s, item)
+}
+
+func (s NodeSet) Size() int {
+	return len(s)
+}
+
+// NodeAndCostHeap is a min heap of NodeAndCost.
+type NodeAndCostHeap []NodeAndCost
+
+func (h NodeAndCostHeap) Len() int           { return len(h) }
+func (h NodeAndCostHeap) Less(i, j int) bool { return h[i].Cost < h[j].Cost }
+func (h NodeAndCostHeap) Swap(i, j int)      { h[i], h[j] = h[j], h[i] }
+
+func (h *NodeAndCostHeap) Push(x NodeAndCost) {
+	*h = append(*h, x)
+}
+
+func (h *NodeAndCostHeap) Pop() NodeAndCost {
+	old := *h
+	n := len(old)
+	item := old[n-1]
+	*h = old[0 : n-1]
+	return item
 }

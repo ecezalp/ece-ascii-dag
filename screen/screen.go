@@ -6,11 +6,11 @@ type Screen struct {
 	width    int
 	height   int
 	runes    [][]rune
-	boxStyle map[string]rune
+	BoxStyle map[string]rune
 }
 
-func (s *Screen) ReadRune(x, y int) rune {
-	return s.runes[y][x]
+func (s *Screen) ReadRune(x, y int) *rune {
+	return &s.runes[y][x]
 }
 
 func (s *Screen) PlaceRune(x, y int, rune rune) {
@@ -43,16 +43,16 @@ func (s *Screen) PlaceBox(x, y, width, height int) {
 	boxEndX := x + width - 1
 
 	// place corners
-	s.PlaceRune(boxStartX, boxStartY, s.boxStyle["topLeftCorner"])
-	s.PlaceRune(boxEndX, boxStartY, s.boxStyle["topLeftCorner"])
-	s.PlaceRune(boxStartX, boxEndY, s.boxStyle["bottomLeftCorner"])
-	s.PlaceRune(boxEndX, boxEndY, s.boxStyle["bottomRightCorner"])
+	s.PlaceRune(boxStartX, boxStartY, s.BoxStyle["topLeftCorner"])
+	s.PlaceRune(boxEndX, boxStartY, s.BoxStyle["topLeftCorner"])
+	s.PlaceRune(boxStartX, boxEndY, s.BoxStyle["bottomLeftCorner"])
+	s.PlaceRune(boxEndX, boxEndY, s.BoxStyle["bottomRightCorner"])
 
 	// place lines
-	s.PlaceHorizontalLine(boxStartX, boxEndX, boxStartY, s.boxStyle["horizontalLine"])
-	s.PlaceHorizontalLine(boxStartX, boxEndX, boxEndY, s.boxStyle["horizontalLine"])
-	s.PlaceVerticalLine(boxStartY, boxEndY, boxStartX, s.boxStyle["verticalLine"])
-	s.PlaceVerticalLine(boxStartY, boxEndY, boxEndY, s.boxStyle["verticalLine"])
+	s.PlaceHorizontalLine(boxStartX, boxEndX, boxStartY, s.BoxStyle["horizontalLine"])
+	s.PlaceHorizontalLine(boxStartX, boxEndX, boxEndY, s.BoxStyle["horizontalLine"])
+	s.PlaceVerticalLine(boxStartY, boxEndY, boxStartX, s.BoxStyle["verticalLine"])
+	s.PlaceVerticalLine(boxStartY, boxEndY, boxEndY, s.BoxStyle["verticalLine"])
 }
 
 func (s *Screen) PlaceTextBox(x, y int, word []rune) {
@@ -78,6 +78,6 @@ func NewScreen(width int, height int) *Screen {
 		width:    width,
 		height:   height,
 		runes:    runes,
-		boxStyle: GetDefaultBoxRuneMap(),
+		BoxStyle: GetDefaultBoxRuneMap(),
 	}
 }
