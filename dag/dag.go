@@ -2,6 +2,7 @@ package dag
 
 import (
 	. "ece-ascii-dag/screen"
+	"fmt"
 	"sort"
 	"strings"
 )
@@ -41,12 +42,12 @@ func NewAdapter(inputs []IntSet, outputs []IntSet) Adapter {
 			return x + width*(y+height*layer)
 		}
 
-		ConnectFunc := func(edge AdapterEdge, nodeA AdapterNode, nodeB AdapterNode, weight int) {
-			edge.A = &nodeA
-			edge.B = &nodeB
+		ConnectFunc := func(edge *AdapterEdge, a *AdapterNode, b *AdapterNode, weight int) {
+			edge.A = a
+			edge.B = b
 			edge.Weight = weight
-			nodeA.Edges = append(nodeA.Edges, &edge)
-			nodeB.Edges = append(nodeB.Edges, &edge)
+			a.Edges = append(a.Edges, edge)
+			b.Edges = append(b.Edges, edge)
 		}
 
 		for y := 0; y < height; y++ {
@@ -55,9 +56,9 @@ func NewAdapter(inputs []IntSet, outputs []IntSet) Adapter {
 				// vertical
 				if y != height-1 {
 					ConnectFunc(
-						adapterEdges[IndexFunc(x, y+0, 0)],
-						adapterNodes[IndexFunc(x, y+0, 0)],
-						adapterNodes[IndexFunc(x, y+1, 0)],
+						&adapterEdges[IndexFunc(x, y+0, 0)],
+						&adapterNodes[IndexFunc(x, y+0, 0)],
+						&adapterNodes[IndexFunc(x, y+1, 0)],
 						1,
 					)
 				}
@@ -65,9 +66,9 @@ func NewAdapter(inputs []IntSet, outputs []IntSet) Adapter {
 				// horizontal
 				if y >= 1 && y <= height-3 && x != width-1 {
 					ConnectFunc(
-						adapterEdges[IndexFunc(x+0, y, 1)],
-						adapterNodes[IndexFunc(x+0, y, 1)],
-						adapterNodes[IndexFunc(x+1, y, 1)],
+						&adapterEdges[IndexFunc(x+0, y, 1)],
+						&adapterNodes[IndexFunc(x+0, y, 1)],
+						&adapterNodes[IndexFunc(x+1, y, 1)],
 						1,
 					)
 				}
@@ -75,9 +76,9 @@ func NewAdapter(inputs []IntSet, outputs []IntSet) Adapter {
 				// corners
 				dy := height/2 - y
 				ConnectFunc(
-					adapterEdges[IndexFunc(x, y, 2)],
-					adapterNodes[IndexFunc(x, y, 0)],
-					adapterNodes[IndexFunc(x, y, 1)],
+					&adapterEdges[IndexFunc(x, y, 2)],
+					&adapterNodes[IndexFunc(x, y, 0)],
+					&adapterNodes[IndexFunc(x, y, 1)],
 					10+dy*dy,
 				)
 			}
@@ -91,9 +92,10 @@ func NewAdapter(inputs []IntSet, outputs []IntSet) Adapter {
 			bigNumber := 1 << 15
 
 			// clear previous costs
-			for _, node := range adapterNodes {
+			for i, node := range adapterNodes {
 				node.Visited = false
 				node.Cost = bigNumber
+				adapterNodes[i] = node
 			}
 
 			start := NewNodeSet()
@@ -115,7 +117,7 @@ func NewAdapter(inputs []IntSet, outputs []IntSet) Adapter {
 					})
 				}
 
-				for pending.Len() != 0 {
+				for len(pending) != 0 {
 					item := pending.Pop()
 					node := item.Node
 					if node.Visited {
@@ -405,13 +407,13 @@ func (c *Context) AddToLayers() {
 		for upwardNodeId := range node.UpwardNodeIds {
 			node.UpwardNodeIdsSorted = append(node.UpwardNodeIdsSorted, upwardNodeId)
 		}
-		sort.Slice(node.UpwardNodeIds, func(i, j int) bool {
+		sort.Slice(node.UpwardNodeIdsSorted, func(i, j int) bool {
 			return c.Nodes[node.UpwardNodeIdsSorted[i]].Row < c.Nodes[node.UpwardNodeIdsSorted[j]].Row
 		})
 		for downwardNodeId := range node.DownwardNodeIds {
 			node.DownwardNodeIdsSorted = append(node.DownwardNodeIdsSorted, downwardNodeId)
 		}
-		sort.Slice(node.DownwardNodeIds, func(i, j int) bool {
+		sort.Slice(node.DownwardNodeIdsSorted, func(i, j int) bool {
 			return c.Nodes[node.DownwardNodeIdsSorted[i]].Row < c.Nodes[node.DownwardNodeIdsSorted[j]].Row
 		})
 	}
@@ -587,16 +589,18 @@ func (c *Context) ResolveCrossingEdges() {
 }
 
 func (c *Context) Layout() {
-	// x-axis: minimal size to draw their content.
+	width := 0
 	for i, node := range c.Nodes {
 		if node.IsConnector {
-			node.Width = 1
+			width = 1
 		} else {
-			node.Width = max(0, len(c.NodeLabels[i]))
-			node.Width = max(node.Width, len(node.UpwardNodeIds))
-			node.Width = max(node.Width, len(node.DownwardNodeIds))
-			node.Width += 2
+			width = max(0, len(c.NodeLabels[i]))
+			width = max(width, len(node.UpwardNodeIds))
+			width = max(width, len(node.DownwardNodeIds))
+			width += 2
 		}
+		node.Width = width
+		c.Nodes[i] = node
 	}
 
 	for i := 0; i < 1000; i++ {
@@ -651,6 +655,7 @@ func (c *Context) Layout() {
 			nodeA := c.Nodes[nodeIdA]
 			for x := nodeA.X + nodeA.Padding; x < nodeA.X-nodeA.Padding+nodeA.Width; x++ {
 				for downwardNodeId := range nodeA.DownwardNodeIds {
+					input[x] = NewIntSet()
 					input[x].Add(getId(nodeIdA, downwardNodeId))
 				}
 			}
@@ -660,6 +665,7 @@ func (c *Context) Layout() {
 			nodeB := c.Nodes[nodeIdB]
 			for x := nodeB.X + nodeB.Padding; x < nodeB.X-nodeB.Padding+nodeB.Width; x++ {
 				for upwardNodeId := range nodeB.UpwardNodeIds {
+					output[x] = NewIntSet()
 					output[x].Add(getId(upwardNodeId, nodeIdB))
 				}
 			}
@@ -675,10 +681,12 @@ func (c *Context) Layout() {
 			node := c.Nodes[nodeId]
 			node.Y = y
 			node.Height = 3
+			c.Nodes[nodeId] = node
 		}
 
-		for _, edge := range layer.Edges {
+		for i, edge := range layer.Edges {
 			edge.Y = y + 2
+			layer.Edges[i] = edge
 
 			if layer.Adapter.IsEnabled {
 				layer.Adapter.Y = y + 2
@@ -711,12 +719,14 @@ func (c *Context) LayoutGrowNode() bool {
 			upwardNode := c.Nodes[edge.UpwardNodeId]
 			if upwardNode.X+upwardNode.Width-2 < edge.X && !upwardNode.IsConnector {
 				upwardNode.Width = edge.X + 2 - upwardNode.X
+				c.Nodes[edge.UpwardNodeId] = upwardNode
 				return false
 			}
 
 			downwardNode := c.Nodes[edge.DownwardNodeId]
 			if downwardNode.X+downwardNode.Width-2 < edge.X && !downwardNode.IsConnector {
 				downwardNode.Width = edge.X + 2 - downwardNode.X
+				c.Nodes[edge.DownwardNodeId] = downwardNode
 				return false
 			}
 		}
@@ -759,6 +769,7 @@ func (c *Context) LayoutShiftConnectorNode() bool {
 		}
 		if node.X < minX {
 			node.X = minX
+			c.Nodes[nodeId] = node
 			return false
 		}
 	}
@@ -782,6 +793,8 @@ func (c *Context) Render() string {
 				s.PlaceBox(node.X, node.Y, node.Width, node.Height)
 			}
 		} else {
+			fmt.Println(node.X, node.Y, node.Width, node.Height)
+
 			s.PlaceBox(node.X, node.Y, node.Width, node.Height)
 			s.PlaceWord(node.X+1, node.Y+1, []rune(c.NodeLabels[i]))
 		}
@@ -964,9 +977,10 @@ func (s NodeSet) Size() int {
 // NodeAndCostHeap is a min heap of NodeAndCost.
 type NodeAndCostHeap []NodeAndCost
 
-func (h NodeAndCostHeap) Len() int           { return len(h) }
-func (h NodeAndCostHeap) Less(i, j int) bool { return h[i].Cost < h[j].Cost }
-func (h NodeAndCostHeap) Swap(i, j int)      { h[i], h[j] = h[j], h[i] }
+//
+//func (h NodeAndCostHeap) Len() int           { return len(h) }
+//func (h NodeAndCostHeap) Less(i, j int) bool { return h[i].Cost < h[j].Cost }
+//func (h NodeAndCostHeap) Swap(i, j int)      { h[i], h[j] = h[j], h[i] }
 
 func (h *NodeAndCostHeap) Push(x NodeAndCost) {
 	*h = append(*h, x)

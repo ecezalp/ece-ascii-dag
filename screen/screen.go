@@ -1,6 +1,9 @@
 package screen
 
-import . "ece-ascii-dag/util"
+import (
+	. "ece-ascii-dag/util"
+	"fmt"
+)
 
 type Screen struct {
 	width    int
@@ -69,6 +72,9 @@ func (s *Screen) String() string {
 }
 
 func NewScreen(width int, height int) *Screen {
+	fmt.Printf("Screen Width %v", width)
+	fmt.Printf("Screen Height %v", height)
+
 	runes := make([][]rune, width)
 	for i := range runes {
 		runes[i] = make([]rune, height)
