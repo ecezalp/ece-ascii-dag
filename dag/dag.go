@@ -3,6 +3,7 @@ package dag
 import (
 	. "ece-ascii-dag/screen"
 	"fmt"
+	"reflect"
 	"sort"
 	"strings"
 )
@@ -255,6 +256,23 @@ func DAGtoText(input string) string {
 	return context.Process(input)
 }
 
+func printStructFields(s interface{}) {
+	val := reflect.ValueOf(s)
+	typ := reflect.TypeOf(s)
+
+	// Make sure s is a struct
+	if val.Kind() != reflect.Struct {
+		fmt.Println("Not a struct")
+		return
+	}
+
+	for i := 0; i < val.NumField(); i++ {
+		field := val.Field(i)
+		fieldName := typ.Field(i).Name
+		fmt.Printf("%s: %v\n", fieldName, field.Interface())
+	}
+}
+
 func (c *Context) Process(input string) string {
 	c.Parse(input)
 	if len(c.Nodes) == 0 {
@@ -268,6 +286,12 @@ func (c *Context) Process(input string) string {
 	c.AddToLayers()
 	c.ResolveCrossingEdges()
 	c.Layout()
+
+	for _, node := range c.Nodes {
+		printStructFields(node)
+		fmt.Println()
+	}
+
 	return c.Render()
 }
 
@@ -314,7 +338,7 @@ func (c *Context) CreateNode(label string) {
 func (c *Context) AddConnector(aId, bId int) {
 	// create connector node
 	cId := len(c.Nodes)
-	c.Nodes = append(c.Nodes, Node{
+	connectorNode := Node{
 		DownwardClosure:       NewIntSet(),
 		DownwardNodeIds:       NewIntSet(),
 		DownwardNodeIdsSorted: []int{},
@@ -328,22 +352,40 @@ func (c *Context) AddConnector(aId, bId int) {
 		Width:                 0,
 		X:                     0,
 		Y:                     0,
-	})
+	}
+	updatedNodes := append(c.Nodes, connectorNode)
 	c.NodeLabels = append(c.NodeLabels, "connector")
+	c.Nodes = updatedNodes
 
-	// insert connector node between nodeA and nodeB
-	c.Nodes[aId].DownwardNodeIds.Remove(bId)
-	c.Nodes[bId].UpwardNodeIds.Remove(aId)
-	c.Nodes[aId].DownwardNodeIds.Add(cId)
-	c.Nodes[cId].UpwardNodeIds.Add(aId)
-	c.Nodes[cId].DownwardNodeIds.Add(bId)
-	c.Nodes[bId].UpwardNodeIds.Add(cId)
+	nodeA := c.Nodes[aId]
+	nodeB := c.Nodes[bId]
+	nodeC := c.Nodes[cId]
+
+	nodeA.DownwardNodeIds.Remove(bId)
+	nodeA.DownwardNodeIds.Add(cId)
+	c.Nodes[aId] = nodeA
+
+	nodeB.UpwardNodeIds.Add(cId)
+	nodeB.UpwardNodeIds.Remove(aId)
+	c.Nodes[bId] = nodeB
+
+	nodeC.UpwardNodeIds.Add(aId)
+	nodeC.DownwardNodeIds.Add(bId)
+	c.Nodes[cId] = nodeC
 }
 
 func (c *Context) AddVertex(aLabel, bLabel string) {
-	// place nodeB below nodeA
-	c.Nodes[c.NodeLabelIdMap[aLabel]].DownwardNodeIds.Add(c.NodeLabelIdMap[bLabel])
-	c.Nodes[c.NodeLabelIdMap[bLabel]].UpwardNodeIds.Add(c.NodeLabelIdMap[aLabel])
+	nodeAId := c.NodeLabelIdMap[aLabel]
+	nodeA := c.Nodes[nodeAId]
+
+	nodeBId := c.NodeLabelIdMap[bLabel]
+	nodeB := c.Nodes[nodeBId]
+
+	nodeA.DownwardNodeIds.Add(nodeBId)
+	nodeB.UpwardNodeIds.Add(nodeAId)
+
+	c.Nodes[nodeAId] = nodeA
+	c.Nodes[nodeBId] = nodeB
 }
 
 func (c *Context) TopoSort() (success bool) {
@@ -403,15 +445,17 @@ func (c *Context) AddToLayers() {
 	c.OptimizeRowOrder()
 
 	// Precompute upward_sorted, downward_sorted.
-	for _, node := range c.Nodes {
+	for i, node := range c.Nodes {
 		for upwardNodeId := range node.UpwardNodeIds {
 			node.UpwardNodeIdsSorted = append(node.UpwardNodeIdsSorted, upwardNodeId)
+			c.Nodes[i] = node
 		}
 		sort.Slice(node.UpwardNodeIdsSorted, func(i, j int) bool {
 			return c.Nodes[node.UpwardNodeIdsSorted[i]].Row < c.Nodes[node.UpwardNodeIdsSorted[j]].Row
 		})
 		for downwardNodeId := range node.DownwardNodeIds {
 			node.DownwardNodeIdsSorted = append(node.DownwardNodeIdsSorted, downwardNodeId)
+			c.Nodes[i] = node
 		}
 		sort.Slice(node.DownwardNodeIdsSorted, func(i, j int) bool {
 			return c.Nodes[node.DownwardNodeIdsSorted[i]].Row < c.Nodes[node.DownwardNodeIdsSorted[j]].Row
@@ -435,17 +479,21 @@ func (c *Context) AddToLayers() {
 
 func (c *Context) OptimizeRowOrder() {
 	computeDownwardClosure := func() {
+		fmt.Println("HERE")
+		fmt.Println(len(c.Layers))
 		for y := len(c.Layers) - 2; y > 0; y-- {
-			currentLayer := &c.Layers[y]
+			currentLayer := c.Layers[y]
 			for _, upwardNodeId := range currentLayer.NodeIds {
-				upwardNode := &c.Nodes[upwardNodeId]
+				upwardNode := c.Nodes[upwardNodeId]
 				for downwardNodeId := range upwardNode.DownwardNodeIds {
 					upwardNode.DownwardClosure[downwardNodeId] = true
 					for nodeId := range c.Nodes[downwardNodeId].DownwardClosure {
 						upwardNode.DownwardClosure[nodeId] = true
 					}
 				}
+				c.Nodes[upwardNodeId] = upwardNode
 			}
+			c.Layers[y] = currentLayer
 		}
 	}
 
